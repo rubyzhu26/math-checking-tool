@@ -54,7 +54,7 @@ const RESPONSE_SCHEMA = {
 };
 
 export const analyzeWorkbookPages = async (imagesBase64: string[]): Promise<AuditResult[]> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || "" });
   
   const parts = imagesBase64.map(data => ({
     inlineData: {
