@@ -1,0 +1,8 @@
+{
+  "name": "Math Workbook Auditor",
+  "description": "An advanced AI-powered auditor for Chinese mathematics workbooks, detecting pedagogical errors, design inconsistencies, and textual inaccuracies.",
+  "requestFramePermissions": [
+    "camera",
+    "display-capture"
+  ]
+}
