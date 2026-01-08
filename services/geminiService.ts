@@ -104,7 +104,6 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
       const response = result.response;
       const text = response.text();
 
-    const text = response.text;
     if (!text) throw new Error("AI response empty.");
     const parsedResults = JSON.parse(text);
 
