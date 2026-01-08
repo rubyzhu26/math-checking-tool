@@ -81,7 +81,7 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash"
+      model: "gemini-1.5-flash"}
       contents: { 
         parts: [
           ...parts,
