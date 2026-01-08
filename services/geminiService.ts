@@ -72,6 +72,7 @@ const RESPONSE_SCHEMA = {
 
 export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResult[]> => {
   const apiKey = import.meta.env.VITE_API_KEY || "";
+  const ai = new GoogleGenerativeAI(apiKey);
   const parts = files.map(file => ({
     inlineData: {
       mimeType: file.mimeType,
