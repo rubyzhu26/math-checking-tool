@@ -70,13 +70,13 @@ const RESPONSE_SCHEMA = {
 };
 
 export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResult[]> => {
-  const apiKey = import.meta.env.VITE_API_KEY;
+  // 1. 获取 API Key
+  const apiKey = import.meta.env.VITE_API_KEY || "";
   
-  // 1. 构建原生的 REST API 请求地址，彻底避开 SDK 的 404 拼写 Bug
-  // 我们直接调用 Google 官方最稳固的 v1beta 端点
+  // 2. 🌟 手动锁定 API 地址，彻底避开 SDK 的 404 拼写 Bug
   const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-  // 2. 准备图片数据
+  // 3. 构建图片和 Prompt 数据结构
   const contents = [{
     parts: [
       ...files.map(file => ({
@@ -90,9 +90,10 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
   }];
 
   try {
-    console.log("--- 启动原生 REST 请求模式 (跳过 SDK) ---");
+    // 调试标记：确保你在控制台能看到这一行
+    console.log("🚀 启动【原生 REST 请求】模式，绕过 SDK 路径限制...");
 
-    // 3. 使用原生 Fetch 直接发送请求
+    // 4. 发送原生请求
     const response = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -106,23 +107,21 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Google API 响应异常: ${response.status} - ${JSON.stringify(errorData)}`);
+      const errorDetail = await response.json();
+      throw new Error(`API 报错: ${response.status} - ${JSON.stringify(errorDetail)}`);
     }
 
     const data = await response.json();
     
-    // 4. 解析结果 (Google API 的响应结构在原生模式下略有不同)
+    // 5. 解析响应文本
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    console.log("AI 原始解析内容:", text);
+    console.log("✅ AI 响应原始文本:", text);
 
     if (!text) return [];
-    const parsed = JSON.parse(text);
-    return Array.isArray(parsed) ? parsed : [parsed];
+    return JSON.parse(text);
 
   } catch (err: any) {
-    console.error("原生请求也失败了，错误详情:", err.message);
-    // 即使失败也返回空，保证界面 0 错误而不是崩溃
+    console.error("❌ 原生请求模式调用失败:", err.message);
     return []; 
   }
 };
