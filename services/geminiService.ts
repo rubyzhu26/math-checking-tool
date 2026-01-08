@@ -71,29 +71,33 @@ const RESPONSE_SCHEMA = {
 };
 
 export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResult[]> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.VITE_API_KEY || "" });
-  
-  const parts = files.map(file => ({
-    inlineData: {
-      mimeType: file.mimeType,
-      data: file.data.split(',')[1] || file.data
-    }
-  }));
+  // 1. 钥匙：一定要用 import.meta.env
+  const apiKey = import.meta.env.VITE_API_KEY || "";
+  const ai = new GoogleGenerativeAI(apiKey);
+
+  // ... (中间转换 parts 的代码不变)
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: { 
-        parts: [
-          ...parts,
-          { text: AUDIT_PROMPT }
-        ]
-      },
-      config: {
+    // 2. 获取模型：标准写法
+    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [...parts, { text: AUDIT_PROMPT }] }],
+      generationConfig: {
         responseMimeType: "application/json",
         responseSchema: RESPONSE_SCHEMA
       }
     });
+
+    const response = await result.response;
+    return JSON.parse(response.text());
+
+  } catch (err) {
+    console.error("Analysis failed:", err);
+    // 3. 重点：这就是你说的最后加的那句话，防止前端崩溃
+    return []; 
+  }
+};
 
     const text = response.text;
     if (!text) throw new Error("AI response empty.");
