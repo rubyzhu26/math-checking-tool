@@ -80,9 +80,11 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
   }));
 
   try {
+      // 1. 获取模型实例
       const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
       
-      const response = await model.generateContent({
+      // 2. 发起内容生成请求
+      const result = await model.generateContent({
         contents: [
           {
             role: "user",
@@ -97,6 +99,10 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
           responseSchema: RESPONSE_SCHEMA
         }
       });
+
+      // 3. 获取并解析文本结果
+      const response = result.response;
+      const text = response.text();
 
     const text = response.text;
     if (!text) throw new Error("AI response empty.");
