@@ -70,6 +70,7 @@ const RESPONSE_SCHEMA = {
 };
 
 export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResult[]> => {
+  console.log("--- 强制验证：当前运行的是【1月8日-最终路径对齐版】 ---");
   const apiKey = import.meta.env.VITE_API_KEY || ""; 
   const genAI = new GoogleGenerativeAI(apiKey);
 
