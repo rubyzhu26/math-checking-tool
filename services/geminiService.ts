@@ -74,7 +74,7 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
   const apiKey = import.meta.env.VITE_API_KEY || "";
   
   // 2. 🌟 手动锁定 API 地址，彻底避开 SDK 的 404 拼写 Bug
-  const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
   // 3. 构建图片和 Prompt 数据结构
   const contents = [{
