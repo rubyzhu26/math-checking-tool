@@ -80,19 +80,23 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
   }));
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash"}
-      contents: { 
-        parts: [
-          ...parts,
-          { text: AUDIT_PROMPT }
-        ]
-      },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA
-      }
-    });
+      const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+      
+      const response = await model.generateContent({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              ...parts,
+              { text: AUDIT_PROMPT }
+            ]
+          }
+        ],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_SCHEMA
+        }
+      });
 
     const text = response.text;
     if (!text) throw new Error("AI response empty.");
