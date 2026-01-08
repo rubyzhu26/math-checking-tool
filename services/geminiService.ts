@@ -46,21 +46,21 @@ const AUDIT_PROMPT = `
 `;
 
 const RESPONSE_SCHEMA = {
-  type: Type.ARRAY,
+  type: "array",
   items: {
-    type: Type.OBJECT,
+    type: "object",
     properties: {
-      pageNumber: { type: Type.INTEGER },
-      ocrText: { type: Type.STRING, description: "文字提取结果：显示的原始文本" },
+      pageNumber: { type: "integer" },
+      ocrText: { type: "string", description: "文字提取结果：显示的原始文本" },
       errors: {
-        type: Type.ARRAY,
+        type: "array",
         items: {
-          type: Type.OBJECT,
+          type: "object",
           properties: {
-            category: { type: Type.STRING },
-            description: { type: Type.STRING, description: "错误描述，包含 ❌ 错误 -> ✅ 建议 格式" },
-            suggestion: { type: Type.STRING, description: "具体的修改建议" },
-            severity: { type: Type.STRING, enum: ["high", "medium", "low"] }
+            category: { type: "string" },
+            description: { type: "string", description: "错误描述，包含 ❌ 错误 -> ✅ 建议 格式" },
+            suggestion: { type: "string", description: "具体的修改建议" },
+            severity: { type: "string", enum: ["high", "medium", "low"] }
           },
           required: ["category", "description", "suggestion", "severity"]
         }
@@ -72,7 +72,10 @@ const RESPONSE_SCHEMA = {
 
 export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResult[]> => {
   const apiKey = import.meta.env.VITE_API_KEY || "";
-  const ai = new GoogleGenerativeAI(apiKey);
+  
+  // 1. 初始化 AI 实例
+  const ai = new GoogleGenerativeAI(apiKey); 
+
   const parts = files.map(file => ({
     inlineData: {
       mimeType: file.mimeType,
@@ -81,36 +84,33 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
   }));
 
   try {
-      // 1. 获取模型实例
-      const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
-      
-      // 2. 发起内容生成请求
-      const result = await model.generateContent({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              ...parts,
-              { text: AUDIT_PROMPT }
-            ]
-          }
-        ],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: RESPONSE_SCHEMA
+    // 2. 获取模型并应用刚才定义的 Schema
+    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: "user",
+          parts: [
+            ...parts,
+            { text: AUDIT_PROMPT }
+          ]
         }
-      });
+      ],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA
+      }
+    });
 
-      // 3. 获取并解析文本结果
-      const response = result.response;
-      const text = response.text();
+    // 3. 提取并解析结果
+    const response = await result.response;
+    const text = response.text();
 
     if (!text) throw new Error("AI response empty.");
     const parsedResults = JSON.parse(text);
 
     return parsedResults.map((item: any, idx: number) => {
-      // Map back to the source image data based on index if available
-      // If we provided multiple images (like from a PDF split), map them.
       const sourceImage = files[idx]?.data || files[0]?.data;
       const isImage = files[idx]?.mimeType.startsWith('image/') || files[0]?.mimeType.startsWith('image/');
       
