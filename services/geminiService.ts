@@ -85,8 +85,7 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
 
   try {
     // 2. 获取模型并应用刚才定义的 Schema
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
-    
+    const model = ai.getGenerativeModel({ model: "models/gemini-1.5-flash" });
     const result = await model.generateContent({
       contents: [
         {
