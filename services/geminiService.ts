@@ -71,8 +71,7 @@ const RESPONSE_SCHEMA = {
 };
 
 export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResult[]> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.VITE_API_KEY || "" });
-  
+  const apiKey = import.meta.env.VITE_API_KEY || "";
   const parts = files.map(file => ({
     inlineData: {
       mimeType: file.mimeType,
@@ -82,7 +81,7 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-1.5-flash"
       contents: { 
         parts: [
           ...parts,
