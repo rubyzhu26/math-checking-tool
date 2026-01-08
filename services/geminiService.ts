@@ -1,5 +1,5 @@
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { AuditResult, FilePart } from "../types";
 
 const AUDIT_PROMPT = `
@@ -46,21 +46,21 @@ const AUDIT_PROMPT = `
 `;
 
 const RESPONSE_SCHEMA = {
-  type: "array",
+  type: Type.ARRAY,
   items: {
-    type: "object",
+    type: Type.OBJECT,
     properties: {
-      pageNumber: { type: "integer" },
-      ocrText: { type: "string", description: "文字提取结果：显示的原始文本" },
+      pageNumber: { type: Type.INTEGER },
+      ocrText: { type: Type.STRING, description: "文字提取结果：显示的原始文本" },
       errors: {
-        type: "array",
+        type: Type.ARRAY,
         items: {
-          type: "object",
+          type: Type.OBJECT,
           properties: {
-            category: { type: "string" },
-            description: { type: "string", description: "错误描述，包含 ❌ 错误 -> ✅ 建议 格式" },
-            suggestion: { type: "string", description: "具体的修改建议" },
-            severity: { type: "string", enum: ["high", "medium", "low"] }
+            category: { type: Type.STRING },
+            description: { type: Type.STRING, description: "错误描述，包含 ❌ 错误 -> ✅ 建议 格式" },
+            suggestion: { type: Type.STRING, description: "具体的修改建议" },
+            severity: { type: Type.STRING, enum: ["high", "medium", "low"] }
           },
           required: ["category", "description", "suggestion", "severity"]
         }
@@ -71,11 +71,8 @@ const RESPONSE_SCHEMA = {
 };
 
 export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResult[]> => {
-  const apiKey = import.meta.env.VITE_API_KEY || "";
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
   
-  // 1. 初始化 AI 实例
-  const ai = new GoogleGenerativeAI(apiKey); 
-
   const parts = files.map(file => ({
     inlineData: {
       mimeType: file.mimeType,
@@ -84,32 +81,27 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
   }));
 
   try {
-    // 2. 获取模型并应用刚才定义的 Schema
-    const model = ai.getGenerativeModel({ model: "models/gemini-1.5-flash" });
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [
-            ...parts,
-            { text: AUDIT_PROMPT }
-          ]
-        }
-      ],
-      generationConfig: {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: { 
+        parts: [
+          ...parts,
+          { text: AUDIT_PROMPT }
+        ]
+      },
+      config: {
         responseMimeType: "application/json",
         responseSchema: RESPONSE_SCHEMA
       }
     });
 
-    // 3. 提取并解析结果
-    const response = await result.response;
-    const text = response.text();
-
+    const text = response.text;
     if (!text) throw new Error("AI response empty.");
     const parsedResults = JSON.parse(text);
 
     return parsedResults.map((item: any, idx: number) => {
+      // Map back to the source image data based on index if available
+      // If we provided multiple images (like from a PDF split), map them.
       const sourceImage = files[idx]?.data || files[0]?.data;
       const isImage = files[idx]?.mimeType.startsWith('image/') || files[0]?.mimeType.startsWith('image/');
       
