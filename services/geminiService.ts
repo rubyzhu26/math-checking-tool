@@ -70,44 +70,59 @@ const RESPONSE_SCHEMA = {
 };
 
 export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResult[]> => {
-  console.log("--- 强制验证：当前运行的是【1月8日-最终路径对齐版】 ---");
-  const apiKey = import.meta.env.VITE_API_KEY || ""; 
-  const genAI = new GoogleGenerativeAI(apiKey);
+  const apiKey = import.meta.env.VITE_API_KEY;
+  
+  // 1. 构建原生的 REST API 请求地址，彻底避开 SDK 的 404 拼写 Bug
+  // 我们直接调用 Google 官方最稳固的 v1beta 端点
+  const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-  const parts = files.map(file => ({
-    inlineData: {
-      mimeType: file.mimeType,
-      data: file.data.split(',')[1] || file.data
-    }
-  }));
+  // 2. 准备图片数据
+  const contents = [{
+    parts: [
+      ...files.map(file => ({
+        inlineData: {
+          mimeType: file.mimeType,
+          data: file.data.split(',')[1] || file.data
+        }
+      })),
+      { text: AUDIT_PROMPT }
+    ]
+  }];
 
   try {
-    // 🌟 核心修改：去掉所有前缀，只留简写名，并强制指定 v1beta 版本
-    const model = genAI.getGenerativeModel(
-      { model: "gemini-1.5-flash-8b" },
-      { apiVersion: "v1beta" }
-    );
-    
-    const result = await model.generateContent({
-      contents: [{ role: "user", parts: [...parts, { text: AUDIT_PROMPT }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA
-      }
+    console.log("--- 启动原生 REST 请求模式 (跳过 SDK) ---");
+
+    // 3. 使用原生 Fetch 直接发送请求
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents,
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_SCHEMA
+        }
+      })
     });
 
-    const response = await result.response;
-    const text = response.text();
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Google API 响应异常: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
+
+    const data = await response.json();
     
-    // 🌟 调试第二步：在控制台打印原始结果，方便我们排查识别好不好
+    // 4. 解析结果 (Google API 的响应结构在原生模式下略有不同)
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     console.log("AI 原始解析内容:", text);
 
     if (!text) return [];
-    return JSON.parse(text);
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [parsed];
 
-  } catch (err) {
-    console.error("AI 最终调用失败，错误详情:", err);
-    // 🌟 保命代码：报错时返回空，防止前端弹出红框崩溃
+  } catch (err: any) {
+    console.error("原生请求也失败了，错误详情:", err.message);
+    // 即使失败也返回空，保证界面 0 错误而不是崩溃
     return []; 
   }
 };
