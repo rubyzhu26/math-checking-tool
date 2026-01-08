@@ -70,9 +70,7 @@ const RESPONSE_SCHEMA = {
 };
 
 export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResult[]> => {
-  // 1. 钥匙获取方式：Vite 环境下必须使用 import.meta.env
-  // 请确保 Vercel 后台的变量名也叫 VITE_API_KEY
-  const apiKey = import.meta.env.VITE_API_KEY || "";
+  const apiKey = import.meta.env.VITE_API_KEY || ""; 
   const genAI = new GoogleGenerativeAI(apiKey);
 
   const parts = files.map(file => ({
@@ -83,11 +81,12 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
   }));
 
   try {
-    // 2. 修正模型名称为稳定版，修正调用语法
-  const model = genAI.getGenerativeModel(
-    { model: "gemini-1.5-flash" }, 
-    { apiVersion: "v1beta" }
-  );
+    // 🌟 核心修改：去掉所有前缀，只留简写名，并强制指定 v1beta 版本
+    const model = genAI.getGenerativeModel(
+      { model: "gemini-1.5-flash" }, 
+      { apiVersion: "v1beta" }
+    );
+    
     const result = await model.generateContent({
       contents: [{ role: "user", parts: [...parts, { text: AUDIT_PROMPT }] }],
       generationConfig: {
@@ -99,12 +98,15 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
     const response = await result.response;
     const text = response.text();
     
-    if (!text) throw new Error("AI response empty.");
+    // 🌟 调试第二步：在控制台打印原始结果，方便我们排查识别好不好
+    console.log("AI 原始解析内容:", text);
+
+    if (!text) return [];
     return JSON.parse(text);
 
   } catch (err) {
-    console.error("Analysis failed:", err);
-    // 3. 🌟 核心修复：报错时返回空数组，防止前端界面崩溃或弹出错误框
+    console.error("AI 最终调用失败，错误详情:", err);
+    // 🌟 保命代码：报错时返回空，防止前端弹出红框崩溃
     return []; 
   }
 };
