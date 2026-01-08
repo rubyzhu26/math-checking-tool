@@ -84,7 +84,7 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
   try {
     // 🌟 核心修改：去掉所有前缀，只留简写名，并强制指定 v1beta 版本
     const model = genAI.getGenerativeModel(
-      { model: "gemini-1.5-flash" }, 
+      { model: "gemini-1.5-flash-8b" },
       { apiVersion: "v1beta" }
     );
     
