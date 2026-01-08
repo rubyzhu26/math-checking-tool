@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { AuditResult, FilePart } from "../types";
 
 const AUDIT_PROMPT = `
