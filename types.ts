@@ -13,6 +13,11 @@ export interface ErrorDetail {
   severity: 'high' | 'medium' | 'low';
 }
 
+export interface FilePart {
+  data: string;
+  mimeType: string;
+}
+
 export interface AuditResult {
   pageNumber: number;
   imageUrl?: string;

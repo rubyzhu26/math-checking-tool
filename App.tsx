@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { WorkbookState, AuditResult } from './types';
+import { WorkbookState, AuditResult, FilePart } from './types';
 import FileUpload from './components/FileUpload';
 import ResultCard from './components/ResultCard';
 import { analyzeWorkbookPages } from './services/geminiService';
@@ -19,14 +19,60 @@ const App: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const selectionRef = useRef({ startX: 0, startY: 0, endX: 0, endY: 0, active: false });
 
+  // Convert PDF file to an array of base64 images (one per page)
+  const pdfToImages = async (file: File): Promise<FilePart[]> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await (window as any).pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const images: FilePart[] = [];
+
+    // Limit to first 10 pages for performance/token reasons in this prototype
+    const pagesToProcess = Math.min(pdf.numPages, 10);
+
+    for (let i = 1; i <= pagesToProcess; i++) {
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale: 1.5 });
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+
+      await page.render({ canvasContext: context, viewport }).promise;
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      images.push({ data: dataUrl, mimeType: 'image/jpeg' });
+    }
+    return images;
+  };
+
+  const readFileAsDataURL = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = (e) => reject(e);
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleFileSelect = async (file: File) => {
-    setState(prev => ({ ...prev, isAnalyzing: true, fileName: file.name, error: null }));
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const base64 = e.target?.result as string;
-      await processAnalysis([base64], file.name);
-    };
-    reader.readAsDataURL(file);
+    setState(prev => ({ ...prev, isAnalyzing: true, fileName: file.name, error: null, results: [] }));
+    
+    try {
+      let fileParts: FilePart[] = [];
+      
+      if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        fileParts = await pdfToImages(file);
+      } else {
+        const base64 = await readFileAsDataURL(file);
+        fileParts = [{
+          data: base64,
+          mimeType: file.type || 'image/jpeg'
+        }];
+      }
+
+      await processAnalysis(fileParts, file.name);
+    } catch (err) {
+      console.error("File processing error:", err);
+      setState(prev => ({ ...prev, isAnalyzing: false, error: "文档处理失败，请重试" }));
+    }
   };
 
   const handleStartCapture = async () => {
@@ -136,16 +182,17 @@ const App: React.FC = () => {
     const croppedBase64 = canvas.toDataURL('image/jpeg', 0.9);
     setIsSnipMode(false);
     setCaptureBase64(null);
-    setState(prev => ({ ...prev, isAnalyzing: true, error: null }));
-    await processAnalysis([croppedBase64], `局部捕捉_${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`);
+    setState(prev => ({ ...prev, isAnalyzing: true, error: null, results: [] }));
+    await processAnalysis([{ data: croppedBase64, mimeType: 'image/jpeg' }], `局部捕捉_${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`);
   };
 
-  const processAnalysis = async (images: string[], name: string) => {
+  const processAnalysis = async (files: FilePart[], name: string) => {
     try {
-      const results = await analyzeWorkbookPages(images);
+      const results = await analyzeWorkbookPages(files);
       setState(prev => ({ ...prev, isAnalyzing: false, results, fileName: name }));
     } catch (err) {
-      setState(prev => ({ ...prev, isAnalyzing: false, error: "专家系统解析失败，请检查网络或图片清晰度" }));
+      console.error("API Error:", err);
+      setState(prev => ({ ...prev, isAnalyzing: false, error: "专家系统解析失败，请检查网络或文档清晰度" }));
     }
   };
 
@@ -168,6 +215,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#FDFDFF]">
+      {/* Header */}
       <header className="sticky top-0 z-40 glass border-b border-indigo-100/50 px-10 py-5">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-5 cursor-pointer group" onClick={reset}>
@@ -176,15 +224,15 @@ const App: React.FC = () => {
             </div>
             <div>
               <h1 className="text-xl font-black tracking-tight text-slate-900 leading-none">MathAudit <span className="text-indigo-600">Expert</span></h1>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.3em] mt-1.5 font-mono">Verbatim Precision Engine</p>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.3em] mt-1.5 font-mono text-xs">Verbatim Precision Engine</p>
             </div>
           </div>
           
           <div className="flex items-center gap-4">
-             {state.fileName && (
+             {state.fileName && !state.isAnalyzing && (
                <div className="flex items-center gap-3 animate-slide-up">
                  <button onClick={exportToCSV} className="px-6 py-2.5 bg-slate-900 text-white text-xs font-black rounded-full hover:bg-slate-800 transition-all flex items-center gap-2 shadow-lg shadow-slate-200">
-                   导出专家报告
+                   导出 CSV 报告
                  </button>
                  <button onClick={reset} className="px-6 py-2.5 text-xs font-black text-slate-600 bg-white border border-slate-200 rounded-full hover:bg-slate-50 transition-all">
                    重置
@@ -195,75 +243,81 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-10 mt-16 pb-32">
-        {!state.fileName ? (
-          <div className="max-w-5xl mx-auto animate-fade-in">
+      {/* Main Content */}
+      <main className="max-w-6xl mx-auto px-6 lg:px-10 mt-16 pb-32">
+        {!state.fileName || (state.isAnalyzing && state.results.length === 0) ? (
+          <div className="max-w-4xl mx-auto animate-fade-in">
             <div className="flex flex-col items-center text-center mb-16">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black tracking-widest uppercase mb-6 border border-indigo-100 shadow-sm">
-                20-Year Senior Expert Persona Active
+                Industrial-Grade Audit System
               </div>
-              <h2 className="text-6xl font-black text-slate-900 mb-8 tracking-tighter leading-[1.1]">
+              <h2 className="text-5xl lg:text-6xl font-black text-slate-900 mb-8 tracking-tighter leading-[1.1]">
                 数学练习册<br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600">工业级逐字审校台</span>
               </h2>
-              <p className="text-slate-400 text-xl font-medium max-w-2xl leading-relaxed">
-                遵循 2024 最新出版规范，深度核查新教材列式、Logo细节、<br/>**逐字 OCR 文字提取**及错别字精准识别。
+              <p className="text-slate-400 text-lg lg:text-xl font-medium max-w-2xl leading-relaxed">
+                遵循 2024 最新出版规范，深度核查新教材列式、Logo细节、<br/>**逐字 OCR 文字提取**、PDF 多页审校及错别字精准识别。
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-10 items-stretch">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
               <div 
                 onClick={handleStartCapture}
-                className="md:col-span-5 relative cursor-pointer rounded-[3.5rem] p-12 bg-slate-900 text-white shadow-2xl shadow-indigo-100 group overflow-hidden transition-all duration-700 hover:-translate-y-3"
+                className="relative cursor-pointer rounded-[3rem] p-12 bg-slate-900 text-white shadow-2xl shadow-indigo-100 group overflow-hidden transition-all duration-700 hover:-translate-y-2 border border-slate-800"
               >
                 <div className="relative z-10 flex flex-col h-full justify-between">
                   <div>
-                    <div className="w-16 h-16 bg-white/10 backdrop-blur-2xl rounded-[1.5rem] flex items-center justify-center mb-12 ring-1 ring-white/20">
-                      <svg className="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /></svg>
+                    <div className="w-14 h-14 bg-white/10 backdrop-blur-2xl rounded-2xl flex items-center justify-center mb-10 ring-1 ring-white/20">
+                      <svg className="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><circle cx="12" cy="13" r="3" strokeWidth="2.5" /></svg>
                     </div>
-                    <h3 className="text-3xl font-black mb-4 tracking-tight">立即截屏核查</h3>
-                    <p className="text-slate-400 text-lg font-medium leading-relaxed mb-10">
-                      逐字 OCR 提取，精准识别形近字、笔画错误及数学逻辑规范。
+                    <h3 className="text-2xl font-black mb-4 tracking-tight">截屏核查局部</h3>
+                    <p className="text-slate-400 text-base font-medium leading-relaxed mb-8">
+                      精确框选练习册中的某个题目或图形，立即进行针对性纠错分析。
                     </p>
                   </div>
-                  <div className="inline-flex items-center gap-3 px-6 py-3 bg-indigo-600 rounded-full text-xs font-black uppercase tracking-widest w-fit">
-                    立即选取题目 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M14 5l7 7-7 7" /></svg>
+                  <div className="inline-flex items-center gap-2 text-indigo-400 text-xs font-black uppercase tracking-widest group-hover:gap-4 transition-all">
+                    开始截屏 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M14 5l7 7-7 7" /></svg>
                   </div>
                 </div>
               </div>
 
-              <div className="md:col-span-7 flex flex-col gap-8">
-                <FileUpload onFileSelect={handleFileSelect} isProcessing={state.isAnalyzing} />
-                <div className="bg-white rounded-[3rem] p-10 border border-slate-100 card-shadow flex items-center justify-between">
-                  <div className="flex items-center gap-5">
-                    <div className="p-4 bg-indigo-50 rounded-2xl text-indigo-600">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                    </div>
-                    <div>
-                      <h4 className="font-black text-slate-900 text-lg">专家级知识库</h4>
-                      <p className="text-slate-400 text-sm font-medium">覆盖乘除法列式规范与 Logo 设计细节</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <FileUpload onFileSelect={handleFileSelect} isProcessing={state.isAnalyzing} />
             </div>
           </div>
         ) : (
-          <div className="space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-700">
-            <div className="flex items-center justify-between bg-white/90 backdrop-blur-xl rounded-[3rem] p-12 border border-slate-200/50 card-shadow">
-               <div className="flex items-center gap-8">
-                  <div className="w-20 h-20 bg-slate-900 text-white rounded-[2rem] flex items-center justify-center shadow-2xl rotate-2">
-                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5l5 5v11a2 2 0 01-2 2z" /></svg>
-                  </div>
-                  <div>
-                    <h3 className="text-4xl font-black text-slate-900 tracking-tighter mb-1">{state.fileName}</h3>
-                    <p className="text-slate-400 font-bold text-sm tracking-wide uppercase">
-                      Audit result by 20-year experience expert
-                    </p>
-                  </div>
+          <div className="space-y-16 animate-in fade-in slide-in-from-bottom-8 duration-700">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-slate-200 pb-10">
+               <div>
+                 <div className="flex items-center gap-3 mb-4">
+                   <div className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-black rounded-full shadow-lg shadow-indigo-200">ACTIVE SESSION</div>
+                   <h2 className="text-sm font-black text-slate-400 tracking-widest uppercase font-mono">Document: {state.fileName}</h2>
+                 </div>
+                 <h1 className="text-4xl lg:text-5xl font-black text-slate-900 tracking-tighter">专家审校反馈清单</h1>
+               </div>
+               <div className="flex items-center gap-3">
+                 <div className="bg-white px-6 py-3 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center">
+                    <span className="text-2xl font-black text-slate-900">{state.results.length}</span>
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Total Pages</span>
+                 </div>
+                 <div className="bg-white px-6 py-3 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center">
+                    <span className="text-2xl font-black text-rose-600">{state.results.reduce((acc, r) => acc + r.errors.length, 0)}</span>
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Detected Issues</span>
+                 </div>
                </div>
             </div>
-            <div className="flex flex-col gap-16">
-              {state.results.map((result, idx) => <ResultCard key={idx} result={result} />)}
+            
+            <div className="flex flex-col gap-24">
+              {state.results.map((result, idx) => (
+                <ResultCard key={idx} result={result} />
+              ))}
+            </div>
+
+            <div className="mt-20 pt-20 border-t border-slate-200 text-center">
+               <button 
+                  onClick={reset}
+                  className="px-10 py-4 bg-slate-900 text-white rounded-full font-black text-sm tracking-widest uppercase hover:scale-105 transition-transform"
+               >
+                 审校完成，上传新文件
+               </button>
             </div>
           </div>
         )}
@@ -271,14 +325,14 @@ const App: React.FC = () => {
 
       {/* Snipping Overlay */}
       {isSnipMode && captureBase64 && (
-        <div className="fixed inset-0 z-[200] bg-black/80 flex flex-col items-center justify-center">
+        <div className="fixed inset-0 z-[200] bg-black/80 flex flex-col items-center justify-center animate-fade-in">
           <div className="absolute top-10 flex flex-col items-center z-[210] pointer-events-none">
             <div className="px-10 py-4 bg-indigo-600 text-white rounded-2xl shadow-2xl flex items-center gap-4">
                <span className="text-lg font-black tracking-tight">请拖拽鼠标框选核查区域</span>
             </div>
           </div>
           <div className="absolute bottom-10 z-[210]">
-             <button onClick={confirmSnip} className="px-12 py-5 bg-white text-slate-900 rounded-3xl font-black text-xl shadow-2xl">
+             <button onClick={confirmSnip} className="px-12 py-5 bg-white text-slate-900 rounded-3xl font-black text-xl shadow-2xl hover:scale-105 active:scale-95 transition-transform">
                 确认审校
              </button>
           </div>
@@ -286,20 +340,57 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {/* Shutter Flash */}
+      {isFlashing && (
+        <div className="fixed inset-0 bg-white z-[300] shutter-flash pointer-events-none" />
+      )}
+
+      {/* Expert Loading Overlay */}
       {state.isAnalyzing && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xl z-[150] flex items-center justify-center p-8 animate-fade-in">
-          <div className="bg-white rounded-[4rem] p-20 max-w-lg w-full text-center relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-2 bg-indigo-500 scan-animation"></div>
-            <div className="relative w-36 h-36 mx-auto mb-14 border-[8px] border-slate-100 rounded-full flex items-center justify-center">
-               <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center shadow-2xl">
-                 <span className="text-white font-black text-2xl">∑</span>
-               </div>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[999] flex items-center justify-center p-8 animate-fade-in">
+          <div className="bg-white rounded-[2.5rem] p-12 max-w-sm w-full text-center relative overflow-hidden shadow-[0_32px_128px_-16px_rgba(0,0,0,0.4)] border border-white/20 transform-gpu">
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-slate-100 overflow-hidden">
+                <div className="h-full bg-indigo-600 w-1/3 animate-[progress_1.5s_ease-in-out_infinite]"></div>
             </div>
-            <h4 className="text-3xl font-black text-slate-900 mb-6 tracking-tight">资深校对专家分析中</h4>
-            <p className="text-slate-400 font-medium text-sm leading-relaxed">
-              正在执行 OCR 逐字提取，检测错别字、偏旁错误、<br/>形近字混淆及数学教材出版规范...
-            </p>
+            
+            <div className="relative flex flex-col items-center">
+                <div className="relative w-32 h-32 mb-10">
+                    <div className="absolute inset-0 bg-indigo-100 rounded-full animate-ping opacity-25"></div>
+                    <div className="absolute inset-0 border-4 border-slate-50 rounded-full"></div>
+                    <div className="absolute inset-0 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center shadow-xl shadow-indigo-200/50">
+                            <span className="text-white font-black text-3xl">∑</span>
+                        </div>
+                    </div>
+                </div>
+
+                <h4 className="text-2xl font-black text-slate-900 mb-4 tracking-tight">
+                    资深专家文档审校中...
+                </h4>
+                <p className="text-slate-500 font-medium text-sm leading-relaxed">
+                    正在提取内容并检测错别字、<br/>
+                    拼点规则及数学逻辑规范...
+                </p>
+
+                <div className="mt-8 flex flex-col gap-2 items-center">
+                   <div className="flex items-center gap-2">
+                       <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Expert Engine Active</span>
+                   </div>
+                   <div className="text-[10px] text-slate-300 font-medium">遵循 2024 出版规范</div>
+                </div>
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* Error Toast */}
+      {state.error && (
+        <div className="fixed bottom-12 right-12 bg-rose-600 text-white px-8 py-5 rounded-[2rem] shadow-2xl z-[160] text-sm font-bold flex items-center gap-4 animate-slide-up border border-rose-500">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          <span>{state.error}</span>
+          <button onClick={() => setState(s => ({...s, error: null}))} className="ml-4 hover:scale-110 transition-transform">✕</button>
         </div>
       )}
     </div>

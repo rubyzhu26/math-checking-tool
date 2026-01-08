@@ -1,12 +1,12 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { AuditResult } from "../types";
+import { AuditResult, FilePart } from "../types";
 
 const AUDIT_PROMPT = `
-你是一位拥有 20 年经验的资深文字校对专家和数学教材审校专家。你的任务是对输入的数学练习册进行严苛的质量审核。
+你是一位拥有 20 年经验的资深文字校对专家和数学教材审校专家。你的任务是对输入的数学练习册文档（图片或 PDF）进行严苛的质量审核。
 
 ### 核心任务流程
-1. **逐字 OCR 提取**：请先将图片中的所有文字原封不动地提取出来。严禁自动修正任何你认为“写错”的字。必须保留原始状态。
+1. **逐字 OCR 提取**：请先将图片或文档中的所有文字原封不动地提取出来。严禁自动修正任何你认为“写错”的字。必须保留原始状态。
 2. **深度纠错**：基于提取的文字与画面内容，对比以下标准进行校对：
 
 #### 一、教学错误 (Pedagogical)
@@ -39,10 +39,10 @@ const AUDIT_PROMPT = `
 - **引用规范**：引用内容必须加双引号。
 
 ### 输出格式要求
-请输出 JSON 数组。每个对象必须包含：
+请输出 JSON 数组。如果输入是多页 PDF，请为每一页生成一个对应的结果对象。每个对象必须包含：
 - \`pageNumber\`: 页码。
-- \`ocrText\`: 逐字提取的原始文本（文字提取结果）。
-- \`errors\`: 纠错清单。描述需严格遵循：❌ 错误：[原词] -> ✅ 建议：[正确词] (原因：[简述])。
+- \`ocrText\`: 逐字提取的原始文本（文字提取结果：[显示你看到的原始文本]）。
+- \`errors\`: 纠错清单。描述需严格遵循：❌ 错误：[原词] -> ✅ 建议：[正确词] (原因：[简述原因，如：形近字误用])。
 `;
 
 const RESPONSE_SCHEMA = {
@@ -70,13 +70,13 @@ const RESPONSE_SCHEMA = {
   }
 };
 
-export const analyzeWorkbookPages = async (imagesBase64: string[]): Promise<AuditResult[]> => {
+export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResult[]> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
   
-  const parts = imagesBase64.map(data => ({
+  const parts = files.map(file => ({
     inlineData: {
-      mimeType: "image/jpeg",
-      data: data.split(',')[1] || data
+      mimeType: file.mimeType,
+      data: file.data.split(',')[1] || file.data
     }
   }));
 
@@ -97,10 +97,19 @@ export const analyzeWorkbookPages = async (imagesBase64: string[]): Promise<Audi
 
     const text = response.text;
     if (!text) throw new Error("AI response empty.");
-    return JSON.parse(text).map((item: any, idx: number) => ({
-      ...item,
-      imageUrl: imagesBase64[idx] || ""
-    }));
+    const parsedResults = JSON.parse(text);
+
+    return parsedResults.map((item: any, idx: number) => {
+      // Map back to the source image data based on index if available
+      // If we provided multiple images (like from a PDF split), map them.
+      const sourceImage = files[idx]?.data || files[0]?.data;
+      const isImage = files[idx]?.mimeType.startsWith('image/') || files[0]?.mimeType.startsWith('image/');
+      
+      return {
+        ...item,
+        imageUrl: isImage ? sourceImage : undefined
+      };
+    });
   } catch (err) {
     console.error("Analysis failed:", err);
     throw err;
