@@ -71,15 +71,20 @@ const RESPONSE_SCHEMA = {
 };
 
 export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResult[]> => {
-  // 1. 钥匙：一定要用 import.meta.env
+  // 1. 钥匙获取方式：必须使用 import.meta.env
   const apiKey = import.meta.env.VITE_API_KEY || "";
-  const ai = new GoogleGenerativeAI(apiKey);
+  const genAI = new GoogleGenerativeAI(apiKey);
 
-  // ... (中间转换 parts 的代码不变)
+  const parts = files.map(file => ({
+    inlineData: {
+      mimeType: file.mimeType,
+      data: file.data.split(',')[1] || file.data
+    }
+  }));
 
   try {
-    // 2. 获取模型：标准写法
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    // 2. 修正模型名称和调用语法
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
     const result = await model.generateContent({
       contents: [{ role: "user", parts: [...parts, { text: AUDIT_PROMPT }] }],
@@ -90,32 +95,14 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
     });
 
     const response = await result.response;
-    return JSON.parse(response.text());
-
-  } catch (err) {
-    console.error("Analysis failed:", err);
-    // 3. 重点：这就是你说的最后加的那句话，防止前端崩溃
-    return []; 
-  }
-};
-
-    const text = response.text;
+    const text = response.text();
+    
     if (!text) throw new Error("AI response empty.");
-    const parsedResults = JSON.parse(text);
+    return JSON.parse(text);
 
-    return parsedResults.map((item: any, idx: number) => {
-      // Map back to the source image data based on index if available
-      // If we provided multiple images (like from a PDF split), map them.
-      const sourceImage = files[idx]?.data || files[0]?.data;
-      const isImage = files[idx]?.mimeType.startsWith('image/') || files[0]?.mimeType.startsWith('image/');
-      
-      return {
-        ...item,
-        imageUrl: isImage ? sourceImage : undefined
-      };
-    });
   } catch (err) {
     console.error("Analysis failed:", err);
-    throw err;
+    // 3. 🌟 这就是你说的“最后加的一句话”：返回空数组，防止界面弹出“解析失败”红框
+    return []; 
   }
 };
