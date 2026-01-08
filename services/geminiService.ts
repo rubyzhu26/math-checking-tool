@@ -84,7 +84,7 @@ export const analyzeWorkbookPages = async (files: FilePart[]): Promise<AuditResu
 
   try {
     // 2. 修正模型名称为稳定版，修正调用语法
-    const model = genAI.getGenerativeModel({ model: "models/gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const result = await model.generateContent({
       contents: [{ role: "user", parts: [...parts, { text: AUDIT_PROMPT }] }],
       generationConfig: {
