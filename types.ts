@@ -2,11 +2,12 @@
 export enum ErrorCategory {
   Pedagogical = '教学错误',
   Visual = '画面设计',
-  Textual = '文字标点'
+  Textual = '文字纠错',
+  Punctuation = '标点规范'
 }
 
 export interface ErrorDetail {
-  category: ErrorCategory;
+  category: string;
   description: string;
   suggestion: string;
   severity: 'high' | 'medium' | 'low';
@@ -14,7 +15,8 @@ export interface ErrorDetail {
 
 export interface AuditResult {
   pageNumber: number;
-  imageUrl?: string; // Original base64 or processed image
+  imageUrl?: string;
+  ocrText: string; // Verbatim OCR extraction
   errors: ErrorDetail[];
 }
 

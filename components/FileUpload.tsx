@@ -35,7 +35,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, isProcessing }) =
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onClick={() => !isProcessing && fileInputRef.current?.click()}
-      className={`relative overflow-hidden cursor-pointer rounded-[2.5rem] p-16 transition-all duration-500 flex flex-col items-center justify-center border-2 border-dashed
+      className={`relative overflow-hidden cursor-pointer rounded-[2.5rem] p-20 transition-all duration-500 flex flex-col items-center justify-center border-2 border-dashed
         ${isDragging ? 'border-indigo-400 bg-indigo-50 scale-[0.98]' : 'border-slate-200 bg-white hover:bg-slate-50 hover:border-indigo-200 card-shadow'}
         ${isProcessing ? 'cursor-wait' : ''}`}
     >
@@ -56,28 +56,14 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, isProcessing }) =
         
         <h3 className="text-3xl font-extrabold text-slate-900 mb-3 tracking-tight">导入审校文档</h3>
         <p className="text-slate-500 text-center max-w-sm text-lg font-normal leading-relaxed">
-          {isProcessing ? 'AI 神经网络正在解析...' : '拖拽 PDF 或点击此处上传文档'}
+          拖拽 PDF 或点击此处上传文件进行离线分析
         </p>
 
         <div className="mt-8 flex gap-3">
-            <span className="px-4 py-1.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-500 uppercase">PDF</span>
-            <span className="px-4 py-1.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-500 uppercase">Images</span>
+            <span className="px-4 py-1.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-widest border border-slate-200">PDF Supported</span>
+            <span className="px-4 py-1.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-widest border border-slate-200">Images Ready</span>
         </div>
       </div>
-      
-      {isProcessing && (
-        <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex items-center justify-center z-20">
-          <div className="flex flex-col items-center">
-            <div className="relative w-16 h-16 mb-6">
-                <div className="absolute inset-0 border-4 border-indigo-100 rounded-full"></div>
-                <div className="absolute inset-0 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-            </div>
-            <span className="text-lg font-bold text-indigo-600 animate-pulse">
-                智能引擎解析中...
-            </span>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

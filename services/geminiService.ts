@@ -1,32 +1,48 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { AuditResult, ErrorCategory } from "../types";
+import { AuditResult } from "../types";
 
 const AUDIT_PROMPT = `
-你是一位极其严谨的数学教材审校专家。请根据以下详尽的工业级标准对数学练习册内容进行深度审校：
+你是一位拥有 20 年经验的资深文字校对专家和数学教材审校专家。你的任务是对输入的数学练习册进行严苛的质量审核。
 
-一、教学错误 (Pedagogical Errors)
-1. 乘除法列式规范：核查“几个几”的列式。旧教材为“个数×相同数”（如3个9写成3×9），新教材必须严格执行“相同数×个数”（如3个9必须写成9×3）。
-2. 图文一致性：配图需与内容完全相关。严查加减法单元禁止出现乘除法配图等逻辑错误。
+### 核心任务流程
+1. **逐字 OCR 提取**：请先将图片中的所有文字原封不动地提取出来。严禁自动修正任何你认为“写错”的字。必须保留原始状态。
+2. **深度纠错**：基于提取的文字与画面内容，对比以下标准进行校对：
 
-二、画面设计错误 (Visual/Design Errors)
-1. 品牌Logo：核查斑马Logo细节（如是否缺失耳朵、眼睛等）。
-2. 图层逻辑：插画必须在最顶层，严禁被背景遮挡。
-3. 题目答案同步：练习册题目图片与答案图片必须完全一致（如形状、颜色、类型）。
-4. 对齐规范：严查排版对齐。题目序号与小括号（如 (1), (2)）必须在一条竖直线上且严格左对齐。
-5. 图标规范：题目前的引导图标不得缺失或错误。
+#### 一、教学错误 (Pedagogical)
+- **乘除法列式**：严格检查“几个几”的逻辑。新教材要求：相同数在前，个数在后。例如：3个9必须列式为 9×3，严禁写成 3×9。
+- **图文一致性**：检查题目配图是否与题目内容相关。例如：加减法单元中不能出现乘除法配图。
 
-三、文字与标点错误 (Textual & Punctuation Errors)
-1. 基础文字：纠正错别字、少字、语句不通顺。严禁出现英文。
-2. 单位统一：同一题干中相同物品的计量单位必须绝对一致。
-3. 排版逻辑：核查题号、页码、周序、天序的连续性；核查目录与内页对应关系。
-4. 标点符号：
-   - 括号全半角统一：题干与题目中的括号格式必须一致。
-   - 备注格式：带括号备注的句子，句号必须放在小括号后面。例：(这是示例)。
-   - 符号一致性：全书运算符号（+、-、×、÷）字体必须统一。
-   - 引用规范：引用内容必须加双引号。
+#### 二、画面设计错误 (Visual/Design)
+- **品牌规范**：检查“斑马Logo”细节。对比标准版，检查是否缺失耳朵、眼睛等关键细节。
+- **图层逻辑**：插画必须在第一层，严禁被背景或其他底图盖住。
+- **一致性**：
+  - 封面、目录配图必须与单元教学内容匹配。
+  - 练习册题目图片必须与答案中的对应题目图片完全一致（例如：题中是三角形，答案不能是四边形）。
+  - 附页图片必须与内页图画一致。
+  - 题目前图标严禁缺失或误用。
 
-请针对输入的图片，对比上述规则，返回详细、专业的结构化错误报告。
+#### 三、文字纠错 (Textual) - **重中之重**
+- **错别字**：重点查杀形近字（如“诗向”误写为“诗句”、“分线”误写为“分界线”）、同音字、笔画/偏旁错误。
+- **语句通顺**：严查少字、漏字、颠倒字。
+- **单位规范**：计量单位（如cm, kg, 厘米, 千克）必须使用正确且全题一致。
+- **引导语一致性**：同类型题目必须使用统一的引导语/提示语。
+- **语言禁令**：严禁出现非必要的英文。
+- **编排逻辑**：页码、题号顺序必须正确，目录的周序/天序/页码必须与内页精准对应。
+- **间距与字号**：图标与题目间距不能过远；文字中不能有多余或缺少空格；同一元素字号必须一致。
+
+#### 四、标点符号规范 (Punctuation)
+- **标点误用**：句尾漏标点或标点错误。
+- **全半角一致性**：同一题中，题干与题目内的括号必须统一（如全用全角）。
+- **括号位置**：带括号备注的句子，句号必须放在小括号后面。正确格式：(这是示例)。
+- **符号字体**：全书运算符号（+、-、×、÷）格式必须高度统一。
+- **引用规范**：引用内容必须加双引号。
+
+### 输出格式要求
+请输出 JSON 数组。每个对象必须包含：
+- \`pageNumber\`: 页码。
+- \`ocrText\`: 逐字提取的原始文本（文字提取结果）。
+- \`errors\`: 纠错清单。描述需严格遵循：❌ 错误：[原词] -> ✅ 建议：[正确词] (原因：[简述])。
 `;
 
 const RESPONSE_SCHEMA = {
@@ -35,26 +51,27 @@ const RESPONSE_SCHEMA = {
     type: Type.OBJECT,
     properties: {
       pageNumber: { type: Type.INTEGER },
+      ocrText: { type: Type.STRING, description: "文字提取结果：显示的原始文本" },
       errors: {
         type: Type.ARRAY,
         items: {
           type: Type.OBJECT,
           properties: {
             category: { type: Type.STRING },
-            description: { type: Type.STRING },
-            suggestion: { type: Type.STRING },
-            severity: { type: Type.STRING }
+            description: { type: Type.STRING, description: "错误描述，包含 ❌ 错误 -> ✅ 建议 格式" },
+            suggestion: { type: Type.STRING, description: "具体的修改建议" },
+            severity: { type: Type.STRING, enum: ["high", "medium", "low"] }
           },
           required: ["category", "description", "suggestion", "severity"]
         }
       }
     },
-    required: ["pageNumber", "errors"]
+    required: ["pageNumber", "ocrText", "errors"]
   }
 };
 
 export const analyzeWorkbookPages = async (imagesBase64: string[]): Promise<AuditResult[]> => {
-  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || "" });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
   
   const parts = imagesBase64.map(data => ({
     inlineData: {
@@ -79,16 +96,13 @@ export const analyzeWorkbookPages = async (imagesBase64: string[]): Promise<Audi
     });
 
     const text = response.text;
-    if (!text) throw new Error("AI response was empty.");
-    const parsed = JSON.parse(text);
-    
-    // In multi-image analysis, map each result back to its source image
-    return parsed.map((item: any, index: number) => ({
+    if (!text) throw new Error("AI response empty.");
+    return JSON.parse(text).map((item: any, idx: number) => ({
       ...item,
-      imageUrl: imagesBase64[index] || ""
+      imageUrl: imagesBase64[idx] || ""
     }));
   } catch (err) {
-    console.error("Audit analysis failed:", err);
+    console.error("Analysis failed:", err);
     throw err;
   }
 };
